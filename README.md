@@ -1,4 +1,4 @@
-# NEON CLOAK AI
+# Invisibility Cloak
 
 A browser-based invisibility cloak demo built with Streamlit, OpenCV, NumPy, and WebRTC.
 
