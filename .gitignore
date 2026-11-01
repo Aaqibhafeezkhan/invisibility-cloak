@@ -46,6 +46,7 @@ ENV/
 env.bak/
 venv.bak/
 .vscode/
+.streamlit/secrets.toml
 *.png
 *.jpg
 *.jpeg

@@ -1,5 +1,10 @@
+import base64
+import json
 import threading
 import time
+import urllib.parse
+import urllib.request
+import urllib.error
 
 import av
 import cv2
@@ -60,6 +65,46 @@ if "cloak_state" not in st.session_state:
 
 state = st.session_state.cloak_state
 
+
+def get_turn_ice_servers():
+    fallback = [{"urls": ["stun:stun.l.google.com:19302"]}]
+
+    try:
+        config = st.secrets["twilio"]
+        account_sid = config["account_sid"]
+        auth_token = config["auth_token"]
+    except (FileNotFoundError, KeyError, TypeError):
+        return fallback
+
+    if not account_sid or not auth_token:
+        return fallback
+
+    token_url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Tokens"
+    payload = urllib.parse.urlencode({"Ttl": "3600"}).encode("utf-8")
+    credentials = f"{account_sid}:{auth_token}".encode("utf-8")
+    request = urllib.request.Request(token_url, data=payload, method="POST")
+    request.add_header("Authorization", f"Basic {base64.b64encode(credentials).decode('ascii')}")
+    request.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            data = json.loads(response.read().decode("utf-8"))
+        ice_servers = data.get("ice_servers")
+        if isinstance(ice_servers, list) and ice_servers:
+            return ice_servers + fallback
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return fallback
+
+    return fallback
+
+
+@st.cache_data(ttl=3000, show_spinner=False)
+def cached_turn_ice_servers():
+    return get_turn_ice_servers()
+
+
+ice_servers = cached_turn_ice_servers()
+
 st.sidebar.header("Cloak settings")
 
 hue_min = st.sidebar.slider("Hue minimum", 0, 179, 35)
@@ -71,6 +116,7 @@ val_max = st.sidebar.slider("Brightness maximum", 0, 255, 255)
 
 blur_size = st.sidebar.select_slider("Smoothing", options=[3, 5, 7, 9], value=5)
 open_iterations = st.sidebar.slider("Mask cleanup", 0, 4, 2)
+
 
 def build_mask(hsv, h_min, h_max, s_min, s_max, v_min, v_max):
     lower = np.array([s_min, v_min], dtype=np.uint8)
@@ -220,9 +266,9 @@ with left:
     webrtc_streamer(
         key="neon-cloak",
         video_processor_factory=CloakProcessor,
-        rtc_configuration=RTCConfiguration({"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}),
+        rtc_configuration=RTCConfiguration({"iceServers": ice_servers}),
         media_stream_constraints={"video": True, "audio": False},
         async_processing=True,
     )
 
-st.caption("Camera processing happens in the live WebRTC stream. For remote deployment, HTTPS is required and some networks may require TURN credentials.")
+st.caption("Camera processing happens in the live WebRTC stream. HTTPS is required. The app uses Twilio TURN credentials from Streamlit secrets when configured, with Google STUN retained as a fallback.")

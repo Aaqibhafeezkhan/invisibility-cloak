@@ -20,4 +20,20 @@ Community Cloud lets you select the Python version from **Advanced settings** wh
 
 ## Webcam
 
-The live webcam requires HTTPS. Streamlit Community Cloud provides HTTPS automatically. WebRTC connectivity on restrictive networks may additionally require TURN configuration through Streamlit secrets.
+The live webcam requires HTTPS. Streamlit Community Cloud provides HTTPS automatically. WebRTC connectivity on restrictive networks can require TURN configuration.
+
+## TURN configuration
+
+The application reads Twilio Network Traversal credentials from Streamlit secrets and requests short-lived ICE server credentials at runtime. Google STUN remains available as a fallback when Twilio secrets are missing or the token request fails.
+
+Configure the following values in the Streamlit Community Cloud **Secrets** setting:
+
+```toml
+[twilio]
+account_sid = "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+auth_token = "your-twilio-auth-token"
+```
+
+Do not commit `.streamlit/secrets.toml` or place Twilio credentials in application code. Streamlit recommends storing secrets outside the repository and exposes deployed-app secrets through its Secrets management interface. Twilio's Network Traversal Service issues ephemeral TURN credentials for WebRTC clients, with a configurable lifetime.
+
+Local development can use `.streamlit/secrets.toml` with the same structure. Keep that file out of version control.
