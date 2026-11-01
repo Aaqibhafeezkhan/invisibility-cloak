@@ -73,7 +73,7 @@ def get_turn_ice_servers():
         config = st.secrets["twilio"]
         account_sid = config["account_sid"]
         auth_token = config["auth_token"]
-    except (KeyError, TypeError):
+    except (FileNotFoundError, KeyError, TypeError):
         return fallback
 
     if not account_sid or not auth_token:
