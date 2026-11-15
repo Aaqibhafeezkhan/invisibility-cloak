@@ -108,12 +108,20 @@ class CloakState:
             self._previous_mask = None
             self._snapshot = None
 
-    def process_frame(self, frame: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
-        """Process a frame and return (display frame, detection mask)."""
+    def process_frame(
+        self, frame: np.ndarray, processor_token: int | None = None
+    ) -> tuple[np.ndarray, np.ndarray | None]:
+        """Process a frame and return (display frame, detection mask).
+
+        A processor token prevents a late frame from an ended WebRTC worker from
+        modifying the state owned by a newer camera session.
+        """
         if not isinstance(frame, np.ndarray) or frame.ndim != 3 or frame.shape[2] != 3:
             raise ValueError("A three-channel BGR camera frame is required.")
 
         with self._lock:
+            if processor_token is not None and processor_token != self._active_processor_token:
+                return frame, None
             self._last_frame_at = time.monotonic()
             self._frames_processed += 1
             self._camera_disconnected = False

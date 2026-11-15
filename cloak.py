@@ -1,100 +1,101 @@
-import cv2
-import numpy as np
+"""Standalone desktop version of the Invisibility Cloak effect."""
+
+from __future__ import annotations
+
 import time
 
-def nothing(x):
-    pass
+import cv2
+import numpy as np
 
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    exit()
+from cloak_app.vision import apply_cloak
 
-cv2.namedWindow("Controls", cv2.WINDOW_NORMAL)
-cv2.createTrackbar("H_low", "Controls", 140, 179, nothing)
-cv2.createTrackbar("S_low", "Controls", 60, 255, nothing)
-cv2.createTrackbar("V_low", "Controls", 40, 255, nothing)
-cv2.createTrackbar("H_high", "Controls", 179, 179, nothing)
-cv2.createTrackbar("S_high", "Controls", 255, 255, nothing)
-cv2.createTrackbar("V_high", "Controls", 255, 255, nothing)
 
-def capture_background(frames=60, delay=0.05):
-    buf = None
-    for i in range(frames):
-        ret, frame = cap.read()
-        if not ret:
+def capture_background(cap: cv2.VideoCapture, frames: int = 45, delay: float = 0.05) -> np.ndarray | None:
+    """Capture a clean background, averaging only successfully read frames."""
+    accumulator = None
+    captured = 0
+    while captured < frames:
+        success, image = cap.read()
+        if not success:
+            time.sleep(delay)
             continue
-        frame = cv2.flip(frame, 1)
-        frame = cv2.GaussianBlur(frame, (5, 5), 0)
-        if buf is None:
-            buf = np.float32(frame)
+        image = cv2.flip(image, 1)
+        image = cv2.GaussianBlur(image, (5, 5), 0)
+        if accumulator is None:
+            accumulator = np.float32(image)
         else:
-            cv2.accumulate(frame, buf)
+            cv2.accumulate(image, accumulator)
+        captured += 1
         time.sleep(delay)
-    if buf is None:
+
+    if accumulator is None or captured == 0:
         return None
-    avg = (buf / frames).astype(np.uint8)
-    return avg
+    return (accumulator / captured).astype(np.uint8)
 
-time.sleep(2)
-background = capture_background()
 
-if background is None:
-    cap.release()
-    cv2.destroyAllWindows()
-    exit()
+def main() -> None:
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        raise RuntimeError("Could not open a camera. Check that a webcam is connected and available.")
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    window = "Invisibility Cloak"
+    cv2.namedWindow("Controls", cv2.WINDOW_NORMAL)
+    cv2.createTrackbar("Hue min", "Controls", 160, 179, lambda _: None)
+    cv2.createTrackbar("Hue max", "Controls", 10, 179, lambda _: None)
+    cv2.createTrackbar("Saturation min", "Controls", 70, 255, lambda _: None)
+    cv2.createTrackbar("Brightness min", "Controls", 45, 255, lambda _: None)
 
-    frame = cv2.flip(frame, 1)
-    blurred = cv2.GaussianBlur(frame, (5, 5), 0)
-    hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
-
-    h_low = cv2.getTrackbarPos("H_low", "Controls")
-    s_low = cv2.getTrackbarPos("S_low", "Controls")
-    v_low = cv2.getTrackbarPos("V_low", "Controls")
-    h_high = cv2.getTrackbarPos("H_high", "Controls")
-    s_high = cv2.getTrackbarPos("S_high", "Controls")
-    v_high = cv2.getTrackbarPos("V_high", "Controls")
-
-    lower1 = np.array([h_low, s_low, v_low])
-    upper1 = np.array([h_high, s_high, v_high])
-
-    mask1 = cv2.inRange(hsv, lower1, upper1)
-
-    lower2 = np.array([0, s_low, v_low])
-    upper2 = np.array([10, s_high, v_high])
-    mask2 = cv2.inRange(hsv, lower2, upper2)
-
-    mask = cv2.bitwise_or(mask1, mask2)
-
-    kernel = np.ones((3, 3), np.uint8)
-    mask = cv2.medianBlur(mask, 5)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=2)
-    mask = cv2.dilate(mask, kernel, iterations=2)
-
-    mask_inv = cv2.bitwise_not(mask)
-
-    part1 = cv2.bitwise_and(background, background, mask=mask)
-    part2 = cv2.bitwise_and(frame, frame, mask=mask_inv)
-    final = cv2.addWeighted(part1, 1, part2, 1, 0)
-
-    cv2.imshow("Pink Cloak Effect", final)
-    cv2.imshow("Mask", mask)
-
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord('q'):
-        break
-    elif key == ord('b'):
+    try:
         time.sleep(1)
-        background = capture_background()
-    elif key == ord('s'):
-        timestamp = int(time.time())
-        filename = f"cloak_snapshot_{timestamp}.png"
-        cv2.imwrite(filename, final)
+        background = capture_background(cap)
+        if background is None:
+            raise RuntimeError("The camera did not provide frames for background calibration.")
 
-cap.release()
-cv2.destroyAllWindows()
+        previous_mask = None
+        while True:
+            success, frame = cap.read()
+            if not success:
+                break
+            frame = cv2.flip(image, 1)
+            settings = {
+                "hue_min": cv2.getTrackbarPos("Hue min", "Controls"),
+                "hue_max": cv2.getTrackbarPos("Hue max", "Controls"),
+                "sat_min": cv2.getTrackbarPos("Saturation min", "Controls"),
+                "sat_max": 255,
+                "val_min": cv2.getTrackbarPos("Brightness min", "Controls"),
+                "val_max": 255,
+                "blur_size": 5,
+                "cleanup_iterations": 2,
+                "temporal_smoothing": 0.15,
+            }
+            if background.shape != frame.shape:
+                background = cv2.resize(background, (frame.shape[1], frame.shape[0]))
+                previous_mask = None
 
+            output, mask = apply_cloak(frame, background, settings, previous_mask)
+            previous_mask = mask
+            cv2.imshow(window, output)
+            cv2.imshow("Detection mask", mask)
+
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord("q"):
+                break
+            if key == ord("b"):
+                time.sleep(0.5)
+                updated_background = capture_background(cap)
+                if updated_background is not None:
+                    background = updated_background
+                    previous_mask = None
+            if key == ord("s"):
+                filename = f"cloak_snapshot_{int(time.time())}.png"
+                if not cv2.imwrite(filename, output):
+                    print(f"Could not save snapshot: {filename}")
+                else:
+                    print(f"Saved {filename}")
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    main()

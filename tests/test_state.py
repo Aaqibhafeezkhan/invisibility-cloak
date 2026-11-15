@@ -74,3 +74,18 @@ def test_disconnect_clears_background_and_ignores_old_processor_callback():
     assert status["state"] == "disconnected"
     assert not status["has_background"]
     assert not status["has_snapshot"]
+
+
+def test_stale_processor_cannot_modify_new_session_state():
+    state = CloakState(calibration_frames=1)
+    old_token = state.register_processor()
+    new_token = state.register_processor()
+    frame = np.zeros((4, 4, 3), dtype=np.uint8)
+
+    state.request_background_capture()
+    state.process_frame(frame, processor_token=old_token)
+
+    assert state.get_status()["state"] == "calibrating"
+    assert state.get_status()["progress"] == 0.0
+    state.process_frame(frame, processor_token=new_token)
+    assert state.get_status()["state"] == "active"
