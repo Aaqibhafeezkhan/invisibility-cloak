@@ -64,3 +64,28 @@ def test_encode_png_returns_png_bytes():
     assert encoded.startswith(b"\x89PNG\r\n\x1a\n")
     decoded = cv2.imdecode(np.frombuffer(encoded, dtype=np.uint8), cv2.IMREAD_COLOR)
     assert decoded.shape == (4, 4, 3)
+
+
+def test_temporal_smoothing_preserves_a_soft_mask_for_compositing():
+    frame = np.zeros((3, 3, 3), dtype=np.uint8)
+    frame[:] = (0, 255, 0)
+    background = np.full_like(frame, 100)
+    settings = {
+        "hue_min": 35,
+        "hue_max": 85,
+        "sat_min": 70,
+        "sat_max": 255,
+        "val_min": 45,
+        "val_max": 255,
+        "blur_size": 1,
+        "cleanup_iterations": 0,
+        "temporal_smoothing": 0.2,
+    }
+    previous_mask = np.zeros((3, 3), dtype=np.uint8)
+
+    output, mask = apply_cloak(frame, background, settings, previous_mask)
+
+    assert np.all(mask == 204)
+    assert np.all(output[:, :, 0] == 80)
+    assert np.all(output[:, :, 1] == 131)
+    assert np.all(output[:, :, 2] == 80)

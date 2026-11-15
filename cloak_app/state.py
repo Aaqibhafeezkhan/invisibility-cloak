@@ -20,6 +20,7 @@ class CloakState:
 
     def __init__(self, calibration_frames: int = 45) -> None:
         self._lock = threading.RLock()
+        self._calibration_lock = threading.Lock()
         self._calibration_frames = calibration_frames
         self._generation = 0
         self._settings = dict(DEFAULT_SETTINGS)
@@ -134,8 +135,9 @@ class CloakState:
 
         if calibrating and calibrator is not None:
             try:
-                completed_background = calibrator.add_frame(frame)
-                progress = calibrator.progress
+                with self._calibration_lock:
+                    completed_background = calibrator.add_frame(frame)
+                    progress = calibrator.progress
             except ValueError as error:
                 with self._lock:
                     if generation == self._generation:

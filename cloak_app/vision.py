@@ -99,10 +99,12 @@ def apply_cloak(
         and previous_mask.dtype == np.uint8
     ):
         mask = cv2.addWeighted(mask, 1.0 - smoothing, previous_mask, smoothing, 0)
-        _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
 
-    output = frame.copy()
-    cv2.copyTo(background, mask, output)
+    alpha = mask.astype(np.float32)[..., np.newaxis] / 255.0
+    output = np.rint(
+        frame.astype(np.float32) * (1.0 - alpha)
+        + background.astype(np.float32) * alpha
+    ).astype(np.uint8)
     return output, mask
 
 
