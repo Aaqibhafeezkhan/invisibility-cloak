@@ -9,7 +9,7 @@ from streamlit_webrtc import RTCConfiguration, VideoProcessorBase, webrtc_stream
 
 from cloak_app import COLOUR_PRESETS, DEFAULT_SETTINGS, CloakState
 from cloak_app.config import normalize_settings
-from cloak_app.webrpc import get_ice_servers
+from cloak_app.webrtc import get_ice_servers
 
 st.set_page_config(
     page_title="Invisibility Cloak",

@@ -1,4 +1,4 @@
-"""Standalone desktop version of the Invisibility Cloak effect."""
+"""Standalone desktop interface for the Invisibility Cloak effect."""
 
 from __future__ import annotations
 
@@ -7,30 +7,20 @@ import time
 import cv2
 import numpy as np
 
-from cloak_app.vision import apply_cloak
+from cloak_app.calibration import BackgroundCalibrator
+from cloak_app.vision import apply_cloak, encode_png
 
 
-def capture_background(cap: cv2.VideoCapture, frames: int = 45, delay: float = 0.05) -> np.ndarray | None:
-    """Capture a clean background, averaging only successfully read frames."""
-    accumulator = None
-    captured = 0
-    while captured < frames:
-        success, image = cap.read()
+def capture_background(cap: cv2.VideoCapture, frames: int = 45) -> np.ndarray | None:
+    calibrator = BackgroundCalibrator(target_frames=frames)
+    for _ in range(frames):
+        success, frame = cap.read()
         if not success:
-            time.sleep(delay)
             continue
-        image = cv2.flip(image, 1)
-        image = cv2.GaussianBlur(image, (5, 5), 0)
-        if accumulator is None:
-            accumulator = np.float32(image)
-        else:
-            cv2.accumulate(image, accumulator)
-        captured += 1
-        time.sleep(delay)
-
-    if accumulator is None or captured == 0:
-        return None
-    return (accumulator / captured).astype(np.uint8)
+        background = calibrator.add_frame(cv2.flip(frame, 1))
+        if background is not None:
+            return background
+    return None
 
 
 def main() -> None:
@@ -38,25 +28,28 @@ def main() -> None:
     if not cap.isOpened():
         raise RuntimeError("Could not open a camera. Check that a webcam is connected and available.")
 
-    window = "Invisibility Cloak"
     cv2.namedWindow("Controls", cv2.WINDOW_NORMAL)
-    cv2.createTrackbar("Hue min", "Controls", 160, 179, lambda _: None)
-    cv2.createTrackbar("Hue max", "Controls", 10, 179, lambda _: None)
-    cv2.createTrackbar("Saturation min", "Controls", 70, 255, lambda _: None)
-    cv2.createTrackbar("Brightness min", "Controls", 45, 255, lambda _: None)
+    controls = (
+        ("Hue min", 160, 179),
+        ("Hue max", 10, 179),
+        ("Saturation min", 70, 255),
+        ("Brightness min", 45, 255),
+    )
+    for name, initial, maximum in controls:
+        cv2.createTrackbar(name, "Controls", initial, maximum, lambda _: None)
 
     try:
         time.sleep(1)
         background = capture_background(cap)
         if background is None:
-            raise RuntimeError("The camera did not provide frames for background calibration.")
+            raise RuntimeError("The camera did not provide enough frames for background calibration.")
 
         previous_mask = None
         while True:
             success, frame = cap.read()
             if not success:
                 break
-            frame = cv2.flip(image, 1)
+            frame = cv2.flip(frame, 1)
             settings = {
                 "hue_min": cv2.getTrackbarPos("Hue min", "Controls"),
                 "hue_max": cv2.getTrackbarPos("Hue max", "Controls"),
@@ -72,24 +65,25 @@ def main() -> None:
                 background = cv2.resize(background, (frame.shape[1], frame.shape[0]))
                 previous_mask = None
 
-            output, mask = apply_cloak(frame, background, settings, previous_mask)
-            previous_mask = mask
-            cv2.imshow(window, output)
-            cv2.imshow("Detection mask", mask)
-
+            output, previous_mask = apply_cloak(frame, background, settings, previous_mask)
+            cv2.imshow("Invisibility Cloak", output)
+            cv2.imshow("Detection mask", previous_mask)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
                 break
             if key == ord("b"):
                 time.sleep(0.5)
-                updated_background = capture_background(cap)
-                if updated_background is not None:
-                    background = updated_background
+                replacement = capture_background(cap)
+                if replacement is not None:
+                    background = replacement
                     previous_mask = None
             if key == ord("s"):
                 filename = f"cloak_snapshot_{int(time.time())}.png"
-                if not cv2.imwrite(filename, output):
-                    print(f"Could not save snapshot: {filename}")
+                try:
+                    with open(filename, "wb") as snapshot:
+                        snapshot.write(encode_png(output))
+                except OSError as error:
+                    print(f"Could not save snapshot: {error}")
                 else:
                     print(f"Saved {filename}")
     finally:
