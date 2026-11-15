@@ -13,11 +13,13 @@ from cloak_app.vision import apply_cloak, encode_png
 
 def capture_background(cap: cv2.VideoCapture, frames: int = 45) -> np.ndarray | None:
     calibrator = BackgroundCalibrator(target_frames=frames)
-    for _ in range(frames):
+    captured = 0
+    while captured < frames:
         success, frame = cap.read()
         if not success:
             continue
         background = calibrator.add_frame(cv2.flip(frame, 1))
+        captured += 1
         if background is not None:
             return background
     return None
